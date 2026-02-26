@@ -1,4 +1,4 @@
-const { createApp, ref, reactive, computed, watch, onMounted } = Vue;
+const { createApp, ref, reactive, computed, watch, onMounted, onUnmounted } = Vue;
 
 const PRESETS_STORAGE_KEY = "vue-image-resizer-presets";
 
@@ -28,6 +28,16 @@ createApp({
     const presets = ref([]);
 
     const dpr = window.devicePixelRatio || 1;
+
+    const canvasAspectStyle = computed(() => {
+      const w = targetWidth.value || 1;
+      const h = targetHeight.value || 1;
+      return {
+        width: `min(100%, 60vh * ${w}/${h})`,
+        maxHeight: "60vh",
+        aspectRatio: `${w}/${h}`,
+      };
+    });
 
     const formatLabel = (format) => {
       switch (format) {
@@ -125,9 +135,35 @@ createApp({
       handleFile(file);
     };
 
-    const renderCanvas = () => {
+    const onPaste = (event) => {
+      const dt = event.clipboardData;
+      if (!dt) return;
+
+      let file = null;
+      if (dt.files && dt.files.length > 0 && dt.files[0].type && dt.files[0].type.toLowerCase().startsWith("image/")) {
+        file = dt.files[0];
+      }
+      if (!file && dt.items) {
+        for (let i = 0; i < dt.items.length; i++) {
+          const item = dt.items[i];
+          if (item.kind === "file" && item.type && item.type.toLowerCase().startsWith("image/")) {
+            file = item.getAsFile();
+            break;
+          }
+        }
+      }
+      if (file) {
+        event.preventDefault();
+        event.stopPropagation();
+        srcName.value = "pasted-image";
+        handleFile(file);
+      }
+    };
+
+    const renderCanvas = (opts = {}) => {
       if (!canvas.value) return;
 
+      const forExport = opts.forExport === true;
       const ctx = canvas.value.getContext("2d");
       const width = clampDimension(targetWidth.value || srcWidth.value || 1);
       const height = clampDimension(targetHeight.value || srcHeight.value || 1);
@@ -138,10 +174,9 @@ createApp({
       canvas.value.width = width * dpr;
       canvas.value.height = height * dpr;
 
-      canvas.value.style.width = `${width}px`;
-      canvas.value.style.height = `${height}px`;
-
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ctx.imageSmoothingEnabled = true;
+      ctx.imageSmoothingQuality = "high";
 
       ctx.clearRect(0, 0, width, height);
 
@@ -169,6 +204,12 @@ createApp({
       const offsetY = (height - drawHeight) / 2;
 
       ctx.drawImage(srcImage.value, offsetX, offsetY, drawWidth, drawHeight);
+
+      if (!forExport) {
+        ctx.strokeStyle = "rgba(0, 0, 0, 0.45)";
+        ctx.lineWidth = 1;
+        ctx.strokeRect(0, 0, width, height);
+      }
     };
 
     const startEyedropper = () => {
@@ -223,7 +264,6 @@ createApp({
         width: clampDimension(targetWidth.value),
         height: clampDimension(targetHeight.value),
         format: targetFormat.value,
-        aspectMode: aspectMode.value,
         backgroundMode: backgroundMode.value,
         backgroundColor: backgroundColor.value,
       };
@@ -244,7 +284,6 @@ createApp({
       targetWidth.value = clampDimension(preset.width);
       targetHeight.value = clampDimension(preset.height);
       targetFormat.value = preset.format || "image/png";
-      aspectMode.value = preset.aspectMode || "fit";
       backgroundMode.value = preset.backgroundMode || "transparent";
       backgroundColor.value = preset.backgroundColor || "#ffffff";
       isPickingColor.value = false;
@@ -272,6 +311,10 @@ createApp({
     const downloadImage = () => {
       if (!canvas.value || !imageLoaded.value) return;
 
+      renderCanvas({ forExport: true });
+
+      const width = clampDimension(targetWidth.value);
+      const height = clampDimension(targetHeight.value);
       const mime = targetFormat.value || "image/png";
       const isJpegLike =
         mime === "image/jpeg" ||
@@ -281,12 +324,31 @@ createApp({
       const quality = isJpegLike ? 0.92 : undefined;
       const originalName = srcName.value || "image";
       const base = originalName.replace(/\.[^.]+$/, "");
-      const filename = `${base || "image"}-${targetWidth.value}x${targetHeight.value}.${formatExtension(
+      const filename = `${base || "image"}-${width}x${height}.${formatExtension(
         mime
       )}`;
 
-      canvas.value.toBlob(
+      const exportCanvas = document.createElement("canvas");
+      exportCanvas.width = width;
+      exportCanvas.height = height;
+      const exportCtx = exportCanvas.getContext("2d");
+      exportCtx.imageSmoothingEnabled = true;
+      exportCtx.imageSmoothingQuality = "high";
+      exportCtx.drawImage(
+        canvas.value,
+        0,
+        0,
+        canvas.value.width,
+        canvas.value.height,
+        0,
+        0,
+        width,
+        height
+      );
+
+      exportCanvas.toBlob(
         (blob) => {
+          renderCanvas();
           if (!blob) return;
           const url = URL.createObjectURL(blob);
           const a = document.createElement("a");
@@ -321,7 +383,16 @@ createApp({
 
     onMounted(() => {
       loadPresets();
-      renderCanvas();
+      if (presets.value.length > 0) {
+        applyPreset(presets.value[0]);
+      } else {
+        renderCanvas();
+      }
+      document.addEventListener("paste", onPaste, true);
+    });
+
+    onUnmounted(() => {
+      document.removeEventListener("paste", onPaste, true);
     });
 
     return {
@@ -334,6 +405,7 @@ createApp({
       targetWidth,
       targetHeight,
       targetFormat,
+      canvasAspectStyle,
       aspectMode,
       backgroundMode,
       backgroundColor,

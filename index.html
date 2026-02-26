@@ -2,7 +2,7 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8">
-    <title>Vue Image Resizer</title>
+    <title>Image Resizer</title>
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <link rel="stylesheet" href="./styles.css">
     <!-- Vue 3 CDN (global build) -->
@@ -11,7 +11,8 @@
   <body>
     <div id="app" class="app-root">
       <header class="app-header">
-        <h1>Vue Image Resizer</h1>
+        <h1>
+          Image Resizer</h1>
         <p class="app-subtitle">Resize images with presets, fit/fill, and background control.</p>
       </header>
 
@@ -26,8 +27,8 @@
               @dragleave.prevent="onDragLeave"
               @drop.prevent="onDrop"
             >
-              <p v-if="!imageLoaded">Drag &amp; drop an image here</p>
-              <p v-else>Drop a new image to replace</p>
+              <p v-if="!imageLoaded">Drag &amp; drop or paste an image here</p>
+              <p v-else>Drop or paste a new image to replace</p>
               <button type="button" class="btn" @click="onBrowseClick">Browse…</button>
               <input
                 ref="fileInput"
@@ -152,8 +153,7 @@
                   <span class="preset-name">{{ preset.name }}</span>
                   <span class="preset-meta">
                     {{ preset.width }}×{{ preset.height }},
-                    {{ formatLabel(preset.format) }},
-                    {{ preset.aspectMode }}
+                    {{ formatLabel(preset.format) }}
                   </span>
                 </button>
                 <button
@@ -183,11 +183,13 @@
             class="canvas-wrapper"
             :class="{ 'canvas-wrapper--picking': isPickingColor }"
           >
-            <canvas
-              ref="canvas"
-              class="preview-canvas"
-              @click="onCanvasClick"
-            ></canvas>
+            <div class="canvas-aspect" :style="canvasAspectStyle">
+              <canvas
+                ref="canvas"
+                class="preview-canvas"
+                @click="onCanvasClick"
+              ></canvas>
+            </div>
             <p v-if="!imageLoaded" class="empty-text">
               Upload an image to see the preview.
             </p>
